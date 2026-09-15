@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from snakeAI.utils import (
-    Action,
     Cell,
+    Action,
     EAT_NON_FOOD,
     OBJECTS,
     InteractionResult,
@@ -32,17 +32,9 @@ def Apple(action: int, state: State) -> InteractionResult:
     config = OBJECTS[Cell.APPLE]
 
     return InteractionResult(
-        reward=config.reward,
-        health_change=(
-            0
-            if state.is_health_full
-            else config.health_change
-        ),
-        hunger_change=(
-            0
-            if state.is_hunger_full
-            else config.hunger_change
-        ),
+        reward = config.reward,
+        health_change = (0 if state.is_health_full else config.health_change),
+        hunger_change = (0 if state.is_hunger_full else config.hunger_change),
     )
 
 
@@ -68,17 +60,9 @@ def Banana(action: int, state: State) -> InteractionResult:
     config = OBJECTS[Cell.BANANA]
 
     return InteractionResult(
-        reward=config.reward,
-        health_change=(
-            0
-            if state.is_health_full
-            else config.health_change
-        ),
-        hunger_change=(
-            0
-            if state.is_hunger_full
-            else config.hunger_change
-        ),
+        reward = config.reward,
+        health_change = (0 if state.is_health_full else config.health_change ),
+        hunger_change = (0 if state.is_hunger_full else config.hunger_change ),
     )
 
 
@@ -104,17 +88,9 @@ def Frog(action: int, state: State) -> InteractionResult:
     config = OBJECTS[Cell.FROG]
 
     return InteractionResult(
-        reward=config.reward,
-        health_change=(
-            0
-            if state.is_health_full
-            else config.health_change
-        ),
-        hunger_change=(
-            0
-            if state.is_hunger_full
-            else config.hunger_change
-        ),
+        reward = config.reward,
+        health_change = (0 if state.is_health_full else config.health_change),
+        hunger_change = (0 if state.is_hunger_full else config.hunger_change),
     )
 
 
@@ -143,8 +119,8 @@ def Wall(action: int, state: State) -> InteractionResult:
         health += EAT_NON_FOOD.health_change
 
     return InteractionResult(
-        reward=reward,
-        health_change=health,
+        reward = reward,
+        health_change = health,
     )
 
 
@@ -173,8 +149,8 @@ def Obstacle(action: int, state: State) -> InteractionResult:
         health += EAT_NON_FOOD.health_change
 
     return InteractionResult(
-        reward=reward,
-        health_change=health,
+        reward = reward,
+        health_change = health,
     )
 
 
@@ -195,9 +171,9 @@ def Water(action: int, state: State) -> InteractionResult:
     config = OBJECTS[Cell.WATER]
 
     return InteractionResult(
-        reward=config.reward,
-        health_change=config.health_change,
-        hunger_change=config.hunger_change,
+        reward = config.reward,
+        health_change = config.health_change,
+        hunger_change = config.hunger_change,
     )
 
 
@@ -225,9 +201,9 @@ def Self(action: int, state: State) -> InteractionResult:
     )
 
     return InteractionResult(
-        reward=config.reward,
-        health_change=config.health_change,
-        hunger_change=hunger,
+        reward = config.reward,
+        health_change = config.health_change,
+        hunger_change = hunger,
     )
 
 
@@ -245,162 +221,6 @@ def Grass(action: int, state: State) -> InteractionResult:
     Returns:
         An empty ``InteractionResult`` with no reward or stat changes.
     """
-    return InteractionResult()
-
-
-obj_map = {
-    Cell.GRASS: Grass,
-    Cell.WALL: Wall,
-    Cell.SNAKE: Self,
-    Cell.WATER: Water,
-    Cell.APPLE: Apple,
-    Cell.BANANA: Banana,
-    Cell.FROG: Frog,
-    Cell.OBSTACLE: Obstacle,
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-from __future__ import annotations
-from snakeAI.utils import (
-    Action, 
-    Cell, 
-    EAT_NON_FOOD, 
-    OBJECTS, 
-    InteractionResult, 
-    State
-)
-
-
-def Apple(action: int, state: State) -> InteractionResult:
-    if action != Action.EAT:
-        return InteractionResult()
-
-    config = OBJECTS[Cell.APPLE]
-    
-    return InteractionResult(
-        reward=config.reward,
-        health_change=0 if state.is_health_full else config.health_change,
-        hunger_change=0 if state.is_hunger_full else config.hunger_change,
-    )
-
-
-def Banana(action: int, state: State) -> InteractionResult:
-    if action != Action.EAT:
-        return InteractionResult()
-
-    config = OBJECTS[Cell.BANANA]
-    
-    return InteractionResult(
-        reward=config.reward,
-        health_change=0 if state.is_health_full else config.health_change,
-        hunger_change=0 if state.is_hunger_full else config.hunger_change,
-    )
-
-
-def Frog(action: int, state: State) -> InteractionResult:
-    if action != Action.EAT:
-        return InteractionResult()
-
-    config = OBJECTS[Cell.FROG]
-    
-    return InteractionResult(
-        reward=config.reward,
-        health_change=0 if state.is_health_full else config.health_change,
-        hunger_change=0 if state.is_hunger_full else config.hunger_change,
-    )
-
-
-def Wall(action: int, state: State) -> InteractionResult:
-    config = OBJECTS[Cell.WALL]
-    reward = config.reward
-    health = config.health_change
-
-    if action == Action.EAT:
-        reward += EAT_NON_FOOD.reward
-        health += EAT_NON_FOOD.health_change
-
-    return InteractionResult(reward=reward, health_change=health)
-
-
-def Obstacle(action: int, state: State) -> InteractionResult:
-    config = OBJECTS[Cell.OBSTACLE]
-    reward = config.reward
-    health = config.health_change
-
-    if action == Action.EAT:
-        reward += EAT_NON_FOOD.reward
-        health += EAT_NON_FOOD.health_change
-
-    return InteractionResult(reward=reward, health_change=health)
-
-
-def Water(action: int, state: State) -> InteractionResult:
-    config = OBJECTS[Cell.WATER]
-    
-    return InteractionResult(
-        reward=config.reward,
-        health_change=config.health_change,
-        hunger_change=config.hunger_change,
-    )
-
-
-def Self(action: int, state: State) -> InteractionResult:
-    config = OBJECTS[Cell.SNAKE]
-    hunger = config.hunger_change if action == Action.EAT else 0
-    
-    return InteractionResult(
-        reward=config.reward,
-        health_change=config.health_change,
-        hunger_change=hunger,
-    )
-
-
-def Grass(action: int, state: State) -> InteractionResult:
     return InteractionResult()
 
 
