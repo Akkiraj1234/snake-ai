@@ -1,9 +1,12 @@
+# DO NOT CHANGE ANY VARIABLE
+
 [survival]
 max_health = 100.0
 max_hunger = 100.0
 health_gain_reward = 1.0
 full_health_reward = 50.0
 full_hunger_reward = 50.0
+tick_health_decrease = 1.0
 starvation_damage = 1.0
 starvation_reward = -5.0
 death_reward = -100.0

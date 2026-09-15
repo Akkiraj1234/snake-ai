@@ -1,7 +1,8 @@
 from __future__ import annotations
 import asyncio
 
-from .world.controller import build_world
+# from .world.controller import build_world
+from .world.enviroment import Environment
 from .parser import parse_args
 
 
@@ -17,7 +18,10 @@ async def main() -> None:
     purely for observation without training.
     """
     args = parse_args()
-    world_controller, ai_controller = build_world()
+    env = Environment()
+    env.generate_new_world()
+    for i in env.world:
+        print(i)
 
     # TODO: Pass configuration to the application runner.
     #
