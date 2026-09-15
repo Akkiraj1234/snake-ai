@@ -64,6 +64,10 @@ class Controller:
         self.snake = Snake()
         self._lock = RLock()
         self._ai_data = {}
+        self._age = 0
+        self._last_action = Action.IDLE
+        self._last_reward = 0.0
+        self._last_message = "waiting"
     
     def _target(self, direction: int) -> tuple[int, int]:
         """
@@ -124,6 +128,10 @@ class Controller:
         """
         self.env.generate_new_world(seed)
         self.snake.reset()
+        self._age = 0
+        self._last_action = Action.IDLE
+        self._last_reward = 0.0
+        self._last_message = "new world"
     
     @lock
     def get_frame(self, width: int | None = None, height: int | None = None) -> list[list[int]]:
@@ -190,7 +198,9 @@ class Controller:
 
         if action == Action.IDLE:
             reward = self.snake.tick()
-            return reward, self.snake.is_dead, "snake did not moved"
+            message = "snake did not move"
+            self._record_turn(action, reward, message)
+            return reward, self.snake.is_dead, message
 
         # Resolve the direction from the current heading.
         direction = self.env.snake_direction
@@ -262,7 +272,15 @@ class Controller:
             }[action]
             message = f"{movement} onto {cell_name}"
 
+        self._record_turn(action, reward, message)
         return reward, self.snake.is_dead, message
+
+    def _record_turn(self, action: int, reward: float, message: str) -> None:
+        """Store the small status snapshot used by read-only renderers."""
+        self._age += 1
+        self._last_action = action
+        self._last_reward = reward
+        self._last_message = message
 
     async def act_async(self, action: int) -> RewardInfo:
         """
@@ -284,7 +302,8 @@ class Controller:
         """
         return await asyncio.to_thread(self.act, action)
 
-    def save_data(self, ai_result: dict[int, int]):
+    def save_data(self, ai_result: dict[str, object]) -> None:
+        """Store optional trainer metrics for presentation-only consumers."""
         self._ai_data = ai_result
 
 
@@ -307,7 +326,8 @@ class AIController:
     def new_world(self, seed: int | None = None): 
         self._controller.new_world(seed)
         
-    def send_ai_result(self, data: dict[int, int]):
+    def send_ai_result(self, data: dict[str, object]) -> None:
+        """Publish optional Q-learning metrics for the terminal UI."""
         self._controller.save_data(data)
 
 
@@ -318,8 +338,18 @@ class UIController:
     def __init__(self, controller: Controller) -> None: 
         self._controller = controller
         
-    def get_frame_data(self): 
-        return self._controller.get_frame(), self._controller._ai_data
+    def get_frame_data(self):
+        """Return the grid and the compact status data needed by a UI."""
+        state = self._controller.snake.get_state()
+        return self._controller.get_frame(), {
+            **self._controller._ai_data,
+            "age": self._controller._age,
+            "health": state.health,
+            "hunger": state.hunger,
+            "action": self._controller._last_action,
+            "reward": self._controller._last_reward,
+            "message": self._controller._last_message,
+        }
     
     async def get_frame_async(self): 
         return await asyncio.to_thread(self._controller.get_frame)
