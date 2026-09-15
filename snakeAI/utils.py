@@ -6,9 +6,12 @@ Game rules stay in objects.py and controller.py.
 """
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import wraps
+from threading import RLock
 from pathlib import Path
+from typing import Any
 import tomllib
 
 
@@ -174,3 +177,42 @@ class InteractionResult:
     reward: float = 0.0
     health_change: float = 0.0
     hunger_change: float = 0.0
+
+
+
+# ==================================================
+# utils
+# ==================================================
+
+def lock(func: Callable) -> Callable:
+    """
+    Protect an instance method with the instance's ``_lock``.
+
+    The decorated method executes while ``self._lock`` is held and releases
+    the lock automatically when the method returns or raises an exception.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs) -> Any:
+        with self._lock:
+            return func(self, *args, **kwargs)
+
+    return wrapper
+
+
+def lockfunc(lockinstance: RLock) -> Callable:
+    """
+    Protect a function with the given lock.
+
+    Returns a decorator that executes the decorated function while
+    ``lockinstance`` is held and releases it automatically when the function
+    returns or raises an exception.
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            with lockinstance:
+                return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

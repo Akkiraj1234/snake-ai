@@ -1,44 +1,118 @@
-"""AI and UI handles over one thread-safe snake simulation."""
 from __future__ import annotations
-
-import asyncio
 from threading import RLock
 from typing import Any
+import asyncio
 
-from snakeAI.utils import (Action, Cell, Direction, OBJECTS, InteractionResult,
-                           WORLD_W, WORLD_H, OBSTACLE_COUNT, FOOD_COUNT, INITIAL_BODY_LENGTH)
-from .enviroment import Enviroment, Snake
+from snakeAI.utils import (
+    Action, 
+    Cell,
+    Direction, 
+    OBJECTS, 
+    InteractionResult,
+    lock,
+    lockfunc
+)
+
+from .enviroment import Environment, Snake
 from .objects import obj_map
 
-_VECTORS = {Direction.UP: (-1, 0), Direction.DOWN: (1, 0), Direction.LEFT: (0, -1), Direction.RIGHT: (0, 1)}
-_LEFT = {Direction.UP: Direction.LEFT, Direction.LEFT: Direction.DOWN, Direction.DOWN: Direction.RIGHT, Direction.RIGHT: Direction.UP}
-_RIGHT = {value: key for key, value in _LEFT.items()}
+
+_VECTORS = {
+    Direction.UP: (-1, 0), 
+    Direction.DOWN: (1, 0), 
+    Direction.LEFT: (0, -1), 
+    Direction.RIGHT: (0, 1)
+}
+_LEFT = {
+    Direction.UP: Direction.LEFT, 
+    Direction.LEFT: Direction.DOWN, 
+    Direction.DOWN: Direction.RIGHT, 
+    Direction.RIGHT: Direction.UP
+}
+_RIGHT = {
+    Direction.LEFT: Direction.UP,
+    Direction.DOWN: Direction.LEFT,
+    Direction.RIGHT: Direction.DOWN,
+    Direction.UP: Direction.RIGHT
+}
+
+# need 2 controller
+# 1. async safe ui controller get frame, state and all and ai decision too
+# 2. ai cotroller give frame in chunk and ui reprsentive wa
+#   - allow crating new world
+#   - send next move allow moving snake
+#   - get ai data chunk and snake data
+#   - get reward data and all
+
 
 
 class Controller:
-    """The rule engine: actions, object interaction, movement, and rewards."""
+    """
+    Coordinate game state, actions, interactions, movement, and rewards.
 
-    def __init__(self, env: Enviroment) -> None:
-        self.env, self.snake, self._lock = env, Snake(), RLock()
+    The controller connects the environment and snake, applying game rules
+    and managing state changes that result from agent actions.
+    """
+    def __init__(self, env: Environment) -> None:
+        """
+        Initialize a controller for the given environment.
 
-    def new_world(self, seed: int | None = None) -> None:
-        with self._lock:
-            self.env.genrate_new_world(seed)
-            self.snake.reset()
-
+        Args:
+            env: Environment instance used to manage the world and its layout.
+        """
+        self.env = env
+        self.snake = Snake()
+        self._r_lock = RLock()
+    
     def _target(self, direction: int) -> tuple[int, int]:
+        """
+        Return the cell directly ahead of the snake in the given direction.
+
+        The returned position is calculated relative to the snake's current head
+        and does not modify the environment.
+        """
         y, x = self.env.snake_head  # type: ignore[misc]
         dy, dx = _VECTORS[direction]
         return y + dy, x + dx
 
     def _move(self, position: tuple[int, int], grow: bool) -> None:
+        """
+        Move the snake's head to the given position.
+
+        The new head is added to the front of the snake and the corresponding
+        world cell is marked as occupied. When ``grow`` is false, the tail is
+        removed to keep the snake's length unchanged; otherwise the tail remains
+        and the snake grows by one cell.
+        """
+        # moving snake removing back and adding front
         self.env.snake.appendleft(position)
         self.env.snake_head = position
         self.env.world[position[0]][position[1]] = Cell.SNAKE
-        if not grow:
-            tail = self.env.snake.pop()
-            if tail != position:
-                self.env.world[tail[0]][tail[1]] = Cell.GRASS
+        
+        # if grow then remove back else no
+        if grow: return
+        
+        tail = self.env.snake.pop()
+        
+        if tail != position:
+            self.env.world[tail[0]][tail[1]] = Cell.GRASS
+    
+    def _cell_or_wall(self, y: int, x: int) -> int:
+        return self.env.world[y][x] if 0 <= y < self.env.world_h and 0 <= x < self.env.world_w else Cell.WALL
+    
+    @lock
+    def new_world(self, seed: int | None = None) -> None:
+        """
+        Generate a new world and reset the snake's survival state.
+
+        The environment is regenerated using the optional seed, after which
+        the snake is restored to its initial health and hunger.
+
+        Args:
+            seed: Optional seed used to generate a deterministic world.
+        """
+        self.env.generate_new_world(seed)
+        self.snake.reset()
 
     def act(self, action: int) -> tuple[float, bool, dict[str, Any]]:
         """Apply one relative action and return ``(reward, done, info)``."""
@@ -74,12 +148,6 @@ class Controller:
                 "moved": not blocked, "ate_food": ate_food, "direction": self.env.snake_direction,
             }
 
-    async def act_async(self, action: int) -> tuple[float, bool, dict[str, Any]]:
-        return await asyncio.to_thread(self.act, action)
-
-    def _cell_or_wall(self, y: int, x: int) -> int:
-        return self.env.world[y][x] if 0 <= y < self.env.world_h and 0 <= x < self.env.world_w else Cell.WALL
-
     def get_frame(self, width: int | None = None, height: int | None = None) -> dict[str, Any]:
         """Copy a full grid or a head-centred AI view; callers cannot mutate state."""
         with self._lock:
@@ -92,6 +160,9 @@ class Controller:
                 grid = [[self._cell_or_wall(hy + y - height // 2, hx + x - width // 2)
                          for x in range(width)] for y in range(height)]
             return {"world": grid, "snake": list(self.env.snake), "state": self.snake.get_state(), "direction": self.env.snake_direction}
+    
+    async def act_async(self, action: int) -> tuple[float, bool, dict[str, Any]]:
+        return await asyncio.to_thread(self.act, action)
 
 
 class AIController:
