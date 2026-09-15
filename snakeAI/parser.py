@@ -1,129 +1,171 @@
 import argparse
+from collections.abc import Sequence
+from textwrap import dedent
+
+from snakeAI.utils import RUNTIME
 
 
-help_command_text = """
-    Examples:
-
-    Train the AI with the default settings:
-        snake-ai
-
-    Train at 5x simulation speed:
-        snake-ai --train --speed 5
-
-    Watch an already-trained AI:
-        snake-ai --view
-
-    Watch at 30 FPS:
-        snake-ai --view --fps 30
-
-    Train without a UI:
-        snake-ai --train --headless
-
-    Train extremely fast without a UI:
-        snake-ai --train --headless --speed 100
-
-    Train headlessly and print progress every second:
-        snake-ai --train --headless --update-interval 1
+HELP_EPILOG = dedent(
     """
+    modes:
+        snake-ai
+            Train the AI using the default settings.
+
+        snake-ai --train
+            Explicitly start training.
+
+        snake-ai --view
+            Watch the AI using the current trained model without training.
+
+    examples:
+        Train faster:
+            snake-ai --train --speed 5
+
+        Train very fast without rendering:
+            snake-ai --train --headless --speed 100
+
+        Train headlessly with progress updates every second:
+            snake-ai --train --headless --update-interval 1
+
+        Watch the trained AI:
+            snake-ai --view
+
+        Watch at 30 FPS:
+            snake-ai --view --fps 30
+
+        Watch in the terminal:
+            snake-ai --view --tui
+
+        Train in the terminal without emoji:
+            snake-ai --train --tui --no-emoji
+
+    notes:
+        --speed controls how quickly the simulation runs.
+        --fps controls how often the UI is refreshed.
+        --update-interval controls progress output in headless mode.
+    """
+).strip()
 
 
-def parse_args() -> argparse.Namespace:
+class HelpFormatter(
+    argparse.ArgumentDefaultsHelpFormatter,
+    argparse.RawDescriptionHelpFormatter,
+):
+    """
+    Help formatter that preserves examples while showing defaults.
+    """
+    pass
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """
     Parse command-line arguments for the Snake AI application.
 
-    The application has two execution modes:
+    The application supports training and viewing modes. Training is the
+    default when no mode is explicitly selected.
 
-    ``--train``
-        Train the Snake AI.
-
-    ``--view``
-        Run the simulation using an existing/trained AI without
-        updating its training state.
-
-    By default, the application runs in training mode.
-
-    The simulation speed is controlled independently from presentation.
-    ``--speed`` changes how quickly the simulation progresses, while
-    ``--fps`` controls how frequently the UI is refreshed.
-
-    In headless mode, ``--update-interval`` controls how frequently
-    progress information is printed.
+    Args:
+        argv: Optional sequence of arguments to parse. When omitted, arguments
+            are read from ``sys.argv``.
 
     Returns:
-        argparse.Namespace:
-            Parsed command-line arguments.
+        Parsed command-line arguments as an :class:`argparse.Namespace`.
+
+    Raises:
+        SystemExit: If invalid arguments are supplied or ``--help`` is used.
     """
     parser = argparse.ArgumentParser(
-        prog = "snake-ai",
-        description = "Train and visualize a Snake AI.",
-        formatter_class = argparse.ArgumentDefaultsHelpFormatter,
-        epilog = help_command_text
+        prog="snake-ai",
+        description=(
+            "Train and visualize a Snake AI in a configurable simulation."
+        ),
+        epilog=HELP_EPILOG,
+        formatter_class=HelpFormatter,
     )
     
     mode = parser.add_mutually_exclusive_group()
+
     mode.add_argument(
         "--train",
-        action = "store_true",
-        help = "Train the Snake AI.",
+        action="store_true",
+        help="Train the Snake AI.",
     )
+
     mode.add_argument(
         "--view",
-        action = "store_true",
-        help = "Watch the simulation without training the AI.",
+        action="store_true",
+        help="Run the trained AI without updating its training state.",
     )
     
-    parser.add_argument(
+    presentation = parser.add_argument_group("presentation")
+
+    presentation.add_argument(
         "--headless",
-        action = "store_true",
-        help = "Run without a live UI.",
+        action="store_true",
+        help="Run training without rendering a live UI.",
     )
 
-    parser.add_argument(
+    presentation.add_argument(
         "--tui",
-        action = "store_true",
-        help = "Use a terminal UI instead of the graphical UI.",
+        action="store_true",
+        help="Use the terminal UI instead of the graphical UI.",
     )
 
-    parser.add_argument(
+    presentation.add_argument(
         "--fps",
-        type = float,
-        default = 60.0,
-        metavar = "FPS",
-        help = (
+        type=float,
+        default=RUNTIME.render_fps,
+        metavar="FPS",
+        help=(
             "UI refresh rate in frames per second. "
-            "This does not control simulation speed."
+            "This controls rendering only, not simulation speed."
         ),
     )
 
-    parser.add_argument(
+    presentation.add_argument(
+        "--no-emoji",
+        action="store_false",
+        dest="emoji",
+        default=RUNTIME.use_emoji,
+        help="Use ASCII tiles instead of emoji in the terminal UI.",
+    )
+    
+    simulation = parser.add_argument_group("simulation")
+
+    simulation.add_argument(
         "--speed",
         type=float,
-        default = 1.0,
-        metavar = "MULTIPLIER",
-        help = (
+        default=1.0,
+        metavar="MULTIPLIER",
+        help=(
             "Simulation speed multiplier. "
-            "1.0 is normal speed; values below 1.0 are slower, "
-            "and values above 1.0 are faster. "
-            "Typical values: 0.1 (very slow), 0.5 (slow), "
-            "1.0 (normal), 2.0 (fast), 5.0 (very fast), "
-            "10.0+ (extremely fast)."
+            "1.0 is normal speed; values below 1.0 slow the simulation "
+            "and values above 1.0 speed it up."
         ),
     )
+    
+    output = parser.add_argument_group("output")
 
-    parser.add_argument(
+    output.add_argument(
         "--update-interval",
         type=float,
         default=0.5,
         metavar="SECONDS",
         help=(
-            "How often progress is printed in headless mode. "
-            "Set to 0 to disable periodic output."
+            "Interval between progress updates in headless mode. "
+            "Set to 0 to disable periodic progress output."
         ),
     )
 
-    args = parser.parse_args()
+    output.add_argument(
+        "--save-on-exit",
+        action=argparse.BooleanOptionalAction,
+        default=RUNTIME.save_on_exit,
+        help="Save the active trainer state when the application exits.",
+    )
 
-    # Default to training mode.
+    args = parser.parse_args(argv)
+    
     if not args.train and not args.view:
         args.train = True
 
@@ -140,6 +182,6 @@ def parse_args() -> argparse.Namespace:
         parser.error("--headless and --tui cannot be used together")
 
     if args.headless and args.view:
-        parser.error("--view cannot be used with --headless")
+        parser.error("--headless can only be used in training mode")
 
     return args

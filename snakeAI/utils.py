@@ -13,6 +13,8 @@ from functools import wraps
 from threading import RLock
 from pathlib import Path
 import tomllib
+import sys
+import os
 
 
 class ENUM:
@@ -217,3 +219,41 @@ def lockfunc(lockinstance: RLock) -> Callable:
         return wrapper
 
     return decorator
+
+
+def supports_emoji() -> bool:
+    """
+    Heuristically determine whether the current terminal can likely render
+    Unicode emoji.
+
+    This is not a guarantee. The result is based on the output encoding and
+    common terminal environment indicators known to support Unicode output.
+
+    Returns:
+        ``True`` when the terminal is likely to support emoji, otherwise
+        ``False``.
+    """
+    encoding = (sys.stdout.encoding or "").lower()
+
+    if "utf-8" not in encoding:
+        return False
+
+    if "WT_SESSION" in os.environ:
+        return True
+
+    if os.environ.get("TERM_PROGRAM") in {
+        "vscode",
+        "Apple_Terminal",
+        "iTerm.app",
+    }:
+        return True
+
+    term = os.environ.get("TERM", "").lower()
+
+    if term in {
+        "xterm-256color",
+        "screen-256color",
+    }:
+        return True
+
+    return True
