@@ -1,6 +1,5 @@
 from __future__ import annotations
 from threading import RLock
-from typing import Any
 import asyncio
 
 from snakeAI.utils import (
@@ -10,7 +9,8 @@ from snakeAI.utils import (
     OBJECTS, 
     InteractionResult,
     lock,
-    lockfunc
+    RewardInfo,
+    WORLD,
 )
 
 from .enviroment import Environment, Snake
@@ -62,7 +62,8 @@ class Controller:
         """
         self.env = env
         self.snake = Snake()
-        self._r_lock = RLock()
+        self._lock = RLock()
+        self._ai_data = {}
     
     def _target(self, direction: int) -> tuple[int, int]:
         """
@@ -98,8 +99,18 @@ class Controller:
             self.env.world[tail[0]][tail[1]] = Cell.GRASS
     
     def _cell_or_wall(self, y: int, x: int) -> int:
-        return self.env.world[y][x] if 0 <= y < self.env.world_h and 0 <= x < self.env.world_w else Cell.WALL
-    
+        """
+        Return the cell at the given coordinates.
+
+        Coordinates outside the world boundaries are treated as wall cells.
+        """
+        return (
+            self.env.world[y][x]
+            if 0 <= y < self.env.world_h
+            and 0 <= x < self.env.world_w
+            else Cell.WALL
+        )
+
     @lock
     def new_world(self, seed: int | None = None) -> None:
         """
@@ -113,78 +124,228 @@ class Controller:
         """
         self.env.generate_new_world(seed)
         self.snake.reset()
-
-    def act(self, action: int) -> tuple[float, bool, dict[str, Any]]:
-        """Apply one relative action and return ``(reward, done, info)``."""
-        with self._lock:
-            if not self.env.snake or self.snake.is_dead:
-                return 0.0, True, {"reason": "dead_or_uninitialized"}
-            if action not in (Action.IDLE, Action.EAT, Action.FORWARD, Action.LEFT, Action.RIGHT):
-                raise ValueError(f"unknown action: {action!r}")
-            if action == Action.IDLE:
-                reward = self.snake.tick()
-                return reward, self.snake.is_dead, {"action": action, "moved": False}
-
-            direction = self.env.snake_direction
-            if action == Action.LEFT:
-                direction = _LEFT[direction]
-            elif action == Action.RIGHT:
-                direction = _RIGHT[direction]
-            y, x = self._target(direction)
-            target_cell = Cell.WALL if not (0 <= y < self.env.world_h and 0 <= x < self.env.world_w) else self.env.world[y][x]
-            object_config = OBJECTS[target_cell]
-            object_handler = obj_map.get(target_cell)
-            interaction_action = Action.EAT if action == Action.EAT else Action.FORWARD
-            result = object_handler(interaction_action, self.snake.get_state()) if object_handler else InteractionResult()
-            reward = result.reward + self.snake.apply(result.health_change, result.hunger_change)
-            blocked = object_config.blocks_movement
-            ate_food = action == Action.EAT and object_config.consumable
-            if not blocked:
-                self._move((y, x), grow=ate_food and object_config.grows_snake)
-                self.env.snake_direction = direction
-            reward += self.snake.tick()
-            return reward, self.snake.is_dead, {
-                "action": action, "target": (y, x), "target_cell": target_cell,
-                "moved": not blocked, "ate_food": ate_food, "direction": self.env.snake_direction,
-            }
-
-    def get_frame(self, width: int | None = None, height: int | None = None) -> dict[str, Any]:
-        """Copy a full grid or a head-centred AI view; callers cannot mutate state."""
-        with self._lock:
-            if width is None or height is None:
-                grid = [row[:] for row in self.env.world]
-            else:
-                if width <= 0 or height <= 0:
-                    raise ValueError("frame dimensions must be positive")
-                hy, hx = self.env.snake_head  # type: ignore[misc]
-                grid = [[self._cell_or_wall(hy + y - height // 2, hx + x - width // 2)
-                         for x in range(width)] for y in range(height)]
-            return {"world": grid, "snake": list(self.env.snake), "state": self.snake.get_state(), "direction": self.env.snake_direction}
     
-    async def act_async(self, action: int) -> tuple[float, bool, dict[str, Any]]:
+    @lock
+    def get_frame(self, width: int | None = None, height: int | None = None) -> list[list[int]]:
+        """
+        Return a read-only copy of the requested world view.
+
+        When ``width`` and ``height`` are omitted, a copy of the complete world
+        grid is returned. When both are provided, a view centered on the snake's
+        head is returned with the requested dimensions.
+
+        Cells outside the world boundaries are represented as wall cells.
+        The returned grid is independent of the environment and can therefore
+        be modified by the caller without affecting the world state.
+
+        Args:
+            width: Width of the head-centered view. Must be provided together
+                with ``height``.
+            height: Height of the head-centered view. Must be provided together
+                with ``width``.
+
+        Returns:
+            A two-dimensional grid containing the requested world view.
+        """
+        if width is None or height is None:
+            return [row[:] for row in self.env.world]
+
+        hy, hx = self.env.snake_head   # type: ignore[misc]
+        get_cell = lambda x, y : self._cell_or_wall(
+            hy + y - height // 2, hx + x - width // 2
+        )
+
+        return [
+            [get_cell(x, y) for x in range(width)]
+            for y in range(height)
+        ]
+
+    @lock
+    def act(self, action: int) -> RewardInfo:
+        """
+        Apply one action and advance the environment by one turn.
+
+        The action is resolved relative to the snake's current direction, and the
+        cell in front of the snake is evaluated through its configured interaction
+        handler. Any resulting health, hunger, and reward changes are applied
+        before movement is performed. Survival effects are then advanced for the
+        turn, and the outcome is returned as a reward, termination state, and
+        concise action message.
+
+        Args:
+            action: Action to perform during the turn.
+
+        Raises:
+            ValueError: If ``action`` is not a recognized action.
+
+        Returns:
+            A tuple containing the reward earned during the turn, whether the
+            snake is dead, and a concise message describing the action outcome.
+        """
+        if action not in Action._data.values():
+            raise ValueError(f"unknown action: {action!r}")
+
+        if not self.env.snake or self.snake.is_dead:
+            return 0.0, True, "dead_or_uninitialized"
+
+        if action == Action.IDLE:
+            reward = self.snake.tick()
+            return reward, self.snake.is_dead, "snake did not moved"
+
+        # Resolve the direction from the current heading.
+        direction = self.env.snake_direction
+
+        if action == Action.LEFT:
+            direction = _LEFT[direction]
+
+        elif action == Action.RIGHT:
+            direction = _RIGHT[direction]
+
+        # Forward movement is represented by the resolved direction.
+        target = self._target(direction)
+        y, x = target
+
+        target_cell = self._cell_or_wall(y, x)
+        cell_name = next(
+            name for name, value in Cell._data.items() if value == target_cell
+        )
+        
+        # Interaction handlers apply rewards/stat changes. Configuration still
+        # owns spatial rules such as blocking movement and growing the snake.
+        object_config = getattr(OBJECTS, cell_name)
+        object_handler = obj_map.get(target_cell)
+
+        result = (
+            object_handler(
+                action,
+                self.snake.get_state(),
+            )
+            if object_handler
+            else InteractionResult()
+        )
+
+        reward = result.reward
+
+        # Apply any health/hunger changes caused by the interaction.
+        reward += self.snake.apply(
+            result.health_change,
+            result.hunger_change,
+        )
+
+        blocked = object_config.blocks_movement
+        
+        ate_food = (
+            action == Action.EAT
+            and object_config.consumable
+        )
+
+        if not blocked:
+            self._move(
+                target,
+                grow=ate_food and object_config.grows_snake,
+            )
+            self.env.snake_direction = direction
+
+        # Survival effects are applied once per turn after the action.
+        reward += self.snake.tick()
+
+        cell_name = cell_name.lower()
+        if action == Action.EAT:
+            message = f"ate {cell_name}" if ate_food else f"tried to eat {cell_name}"
+        elif blocked:
+            message = f"hit {cell_name}"
+        else:
+            movement = {
+                Action.FORWARD: "moved forward",
+                Action.LEFT: "turned left and moved",
+                Action.RIGHT: "turned right and moved",
+            }[action]
+            message = f"{movement} onto {cell_name}"
+
+        return reward, self.snake.is_dead, message
+
+    async def act_async(self, action: int) -> RewardInfo:
+        """
+        Apply an action asynchronously and return its turn outcome.
+
+        The action is executed in a worker thread through :func:`asyncio.to_thread`,
+        allowing the synchronous controller logic to run without blocking the
+        event loop.
+
+        Args:
+            action: Action to perform during the turn.
+
+        Returns:
+            A tuple containing the reward earned during the turn, whether the
+            snake is dead, and a concise message describing the action outcome.
+
+        Raises:
+            ValueError: If ``action`` is not a recognized action.
+        """
         return await asyncio.to_thread(self.act, action)
+
+    def save_data(self, ai_result: dict[int, int]):
+        self._ai_data = ai_result
 
 
 class AIController:
-    """AI-facing commands and local observations."""
-    def __init__(self, controller: Controller) -> None: self._controller = controller
-    def act(self, action: int): return self._controller.act(action)
-    async def act_async(self, action: int): return await self._controller.act_async(action)
-    def get_frame(self, width: int = 10, height: int = 10): return self._controller.get_frame(width, height)
-    def new_world(self, seed: int | None = None): self._controller.new_world(seed)
+    """
+    AI-facing commands and local observations.
+    """
+    def __init__(self, controller: Controller) -> None: 
+        self._controller = controller
+    
+    def act(self, action: int): 
+        return self._controller.act(action)
+    
+    async def act_async(self, action: int): 
+        return await self._controller.act_async(action)
+    
+    def get_frame(self, width: int = 10, height: int = 10): 
+        return self._controller.get_frame(width, height)
+    
+    def new_world(self, seed: int | None = None): 
+        self._controller.new_world(seed)
+        
+    def send_ai_result(self, data: dict[int, int]):
+        self._controller.save_data(data)
 
 
 class UIController:
-    """Read-only rendering handle; rendering cannot mutate the simulation."""
-    def __init__(self, controller: Controller) -> None: self._controller = controller
-    def get_frame(self): return self._controller.get_frame()
-    async def get_frame_async(self): return await asyncio.to_thread(self.get_frame)
+    """
+    Read-only rendering handle; rendering cannot mutate the simulation.
+    """
+    def __init__(self, controller: Controller) -> None: 
+        self._controller = controller
+        
+    def get_frame_data(self): 
+        return self._controller.get_frame(), self._controller._ai_data
+    
+    async def get_frame_async(self): 
+        return await asyncio.to_thread(self._controller.get_frame)
 
 
-def build_world(world_w: int = WORLD_W, world_h: int = WORLD_H, obsital_c: int = OBSTACLE_COUNT,
-                food_c: int = FOOD_COUNT, initial_body_l: int = INITIAL_BODY_LENGTH,
-                maze: bool = False, seed: int | None = None) -> tuple[UIController, AIController]:
-    """Create one shared simulation and return ``(ui_controller, ai_controller)``."""
-    core = Controller(Enviroment(world_w, world_h, obsital_c, food_c, initial_body_l, maze, seed))
+def build_world(
+    world_w: int = WORLD.width, 
+    world_h: int = WORLD.height,
+    obstacle_c: int = WORLD.obstacle_count, 
+    food_c: int = WORLD.food_count,
+    initial_body_l: int = WORLD.initial_body_length,
+    maze: bool = False, seed: int | None = None
+    
+) -> tuple[UIController, AIController]:
+    """
+    Create one shared simulation and return ``(ui_controller, ai_controller)``.
+    """
+    core = Controller(Environment(
+        world_w=world_w,
+        world_h=world_h,
+        obstacle_c=obstacle_c,
+        food_c=food_c,
+        initial_body_l=initial_body_l,
+        maze=maze,
+        seed=seed,
+    ))
+    
     core.new_world(seed)
     return UIController(core), AIController(core)

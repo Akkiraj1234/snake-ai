@@ -7,11 +7,11 @@ Game rules stay in objects.py and controller.py.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any, TypeAlias
 from dataclasses import dataclass
 from functools import wraps
 from threading import RLock
 from pathlib import Path
-from typing import Any
 import tomllib
 
 
@@ -179,6 +179,7 @@ class InteractionResult:
     hunger_change: float = 0.0
 
 
+RewardInfo: TypeAlias = tuple[float, bool, str]
 
 # ==================================================
 # utils

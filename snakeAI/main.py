@@ -1,8 +1,7 @@
 from __future__ import annotations
 import asyncio
 
-# from .world.controller import build_world
-from .world.enviroment import Environment
+from .world import build_world
 from .parser import parse_args
 
 
@@ -18,24 +17,20 @@ async def main() -> None:
     purely for observation without training.
     """
     args = parse_args()
-    env = Environment()
-    env.generate_new_world()
-    for i in env.world:
-        print(i)
-
-    # TODO: Pass configuration to the application runner.
-    #
-    # await run(
-    #     world_controller=world_controller,
-    #     ai_controller=ai_controller,
-    #     train=args.train,
-    #     headless=args.headless,
-    #     tui=args.tui,
-    #     speed=args.speed,
-    #     fps=args.fps,
-    #     update_interval=args.update_interval,
-    # )
-
+    ui_c, ai_c = build_world()
+    
+    import time
+    
+    while True:
+        ai_c.new_world()
+        
+        world, result = ui_c.get_frame_data()
+        
+        for i in world:
+            print(i)
+        
+        time.sleep(0.2)
+        print("\033[2J\033[H", end="")
 
 if __name__ == "__main__":
     asyncio.run(main())

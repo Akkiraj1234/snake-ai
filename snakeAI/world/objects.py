@@ -29,7 +29,7 @@ def Apple(action: int, state: State) -> InteractionResult:
     if action != Action.EAT:
         return InteractionResult()
 
-    config = OBJECTS[Cell.APPLE]
+    config = OBJECTS.APPLE
 
     return InteractionResult(
         reward = config.reward,
@@ -57,7 +57,7 @@ def Banana(action: int, state: State) -> InteractionResult:
     if action != Action.EAT:
         return InteractionResult()
 
-    config = OBJECTS[Cell.BANANA]
+    config = OBJECTS.BANANA
 
     return InteractionResult(
         reward = config.reward,
@@ -85,7 +85,7 @@ def Frog(action: int, state: State) -> InteractionResult:
     if action != Action.EAT:
         return InteractionResult()
 
-    config = OBJECTS[Cell.FROG]
+    config = OBJECTS.FROG
 
     return InteractionResult(
         reward = config.reward,
@@ -109,7 +109,7 @@ def Wall(action: int, state: State) -> InteractionResult:
     Returns:
         The reward and health change produced by the interaction.
     """
-    config = OBJECTS[Cell.WALL]
+    config = OBJECTS.WALL
 
     reward = config.reward
     health = config.health_change
@@ -139,7 +139,7 @@ def Obstacle(action: int, state: State) -> InteractionResult:
     Returns:
         The reward and health change produced by the interaction.
     """
-    config = OBJECTS[Cell.OBSTACLE]
+    config = OBJECTS.OBSTACLE
 
     reward = config.reward
     health = config.health_change
@@ -168,7 +168,7 @@ def Water(action: int, state: State) -> InteractionResult:
     Returns:
         The reward and stat changes produced by the interaction.
     """
-    config = OBJECTS[Cell.WATER]
+    config = OBJECTS.WATER
 
     return InteractionResult(
         reward = config.reward,
@@ -192,7 +192,7 @@ def Self(action: int, state: State) -> InteractionResult:
     Returns:
         The reward and stat changes produced by the interaction.
     """
-    config = OBJECTS[Cell.SNAKE]
+    config = OBJECTS.SNAKE
 
     hunger = (
         config.hunger_change
