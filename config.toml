@@ -1,0 +1,116 @@
+[survival]
+max_health = 100.0
+max_hunger = 100.0
+health_gain_reward = 1.0
+full_health_reward = 50.0
+full_hunger_reward = 50.0
+starvation_damage = 1.0
+starvation_reward = -5.0
+death_reward = -100.0
+
+[world]
+width = 33
+height = 19
+food_count = 28
+obstacle_count = 34
+initial_body_length = 3
+
+[ai]
+max_age = 5000
+learning_rate = 0.12
+discount = 0.92
+start_epsilon = 1.0
+min_epsilon = 0.02
+epsilon_decay = 0.997
+model_file = "data.pkl"
+model_version = 4
+
+[runtime]
+start_delay = 0.065
+min_delay = 0.003
+max_delay = 0.5
+autosave_every = 25
+headless_step_delay = 0.01
+headless_report_interval = 60.0
+
+# Every object has every field. Use 0/false when the property does not apply.
+[objects.GRASS]
+hunger_change = 0.0
+health_change = 0.0
+reward = 0.0
+spawn_weight = 0
+blocks_movement = false
+consumable = false
+grows_snake = false
+
+[objects.WALL]
+hunger_change = 0.0
+health_change = -10.0
+reward = -15.0
+spawn_weight = 0
+blocks_movement = true
+consumable = false
+grows_snake = false
+
+[objects.SNAKE]
+hunger_change = 35.0
+health_change = -35.0
+reward = -35.0
+spawn_weight = 0
+blocks_movement = true
+consumable = false
+grows_snake = false
+
+[objects.WATER]
+hunger_change = 0.0
+health_change = -0.2
+reward = -0.1
+spawn_weight = 0
+blocks_movement = false
+consumable = false
+grows_snake = false
+
+[objects.APPLE]
+hunger_change = 45.0
+health_change = 20.0
+reward = 0.0
+spawn_weight = 5
+blocks_movement = false
+consumable = true
+grows_snake = true
+
+[objects.BANANA]
+hunger_change = 10.0
+health_change = 5.0
+reward = 0.0
+spawn_weight = 3
+blocks_movement = false
+consumable = true
+grows_snake = true
+
+[objects.FROG]
+hunger_change = 100.0
+health_change = 100.0
+reward = 2.0
+spawn_weight = 2
+blocks_movement = false
+consumable = true
+grows_snake = true
+
+[objects.OBSTACLE]
+hunger_change = 0.0
+health_change = -5.0
+reward = -10.0
+spawn_weight = 0
+blocks_movement = true
+consumable = false
+grows_snake = false
+
+[eat_non_food]
+hunger_change = 0.0
+health_change = -2.0
+reward = -10.0
+spawn_weight = 0
+blocks_movement = false
+consumable = false
+grows_snake = false
