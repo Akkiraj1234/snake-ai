@@ -1,11 +1,7 @@
-"""Command-line entry point for the Snake AI simulation."""
 from __future__ import annotations
-
+from collections.abc import Callable
 import asyncio
-import inspect
 import sys
-from dataclasses import dataclass
-from typing import Any, Callable
 
 from .world import AIController, UIController, build_world
 from .parser import parse_args, build_ctx
@@ -18,98 +14,144 @@ from .AI import run_agent
 
 
 
-
-async def save_active_trainer(controller: AIController) -> bool:
-    """Call a future trainer's optional ``save`` hook without assuming one."""
-    save = getattr(controller, "save", None)
-    if not callable(save):
-        return False
-
-    result = save()
-    if inspect.isawaitable(result):
-        await result
-    return True
-
-
 async def cancel_tasks(tasks: list[asyncio.Task[object]]) -> None:
-    """Cancel and collect background tasks so no task is left unretrieved."""
+    """
+    Cancel unfinished tasks and wait for all tasks to complete.
+
+    Cancellation is requested for every unfinished task, then all tasks
+    are awaited so their results or exceptions are retrieved before
+    returning.
+    """
     for task in tasks:
         if not task.done():
             task.cancel()
+    
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-class App():
+class App:
+    """ 
+    Coordinate application controllers, background tasks, and rendering. 
+    
+    The application lifecycle consists of building the controllers, 
+    running the AI and renderer concurrently, and cleaning up all 
+    resources after execution finishes or fails. 
+    """
     def __init__(self, ctx: ENUM) -> None:
+        """
+        Initialize the application with the parsed execution context.
+        """
         self.ctx = ctx
         self.ui_c: UIController | None = None
         self.ai_cr: AIController | None = None
-    
+        
     def build(self) -> None:
+        """
+        Build and initialize the application controllers. 
+        
+        Creates the UI and AI controllers required by the renderer and agent tasks. 
+        """
         contoller = build_world()
         self.ui_c = contoller[0]
         self.ai_c = contoller[1]
-    
-    def get_render(self) ->  Callable:
+
+    def get_render(self) -> Callable:
+        """
+        Return the renderer selected by the application context. 
+        
+        Returns the headless, terminal, or GUI renderer according to the 
+        configured execution mode. 
+        """
         if self.ctx.headless:
             return render_headless
-        
-        elif self.ctx.tui:
+
+        if self.ctx.tui:
             return render_tui
-        
-        else: 
-            return render_gui
-        
+
+        return render_gui
+        """
+    Run the application and return an appropriate process exit code.
+    """
     async def run(self) -> None:
-        tasks: list[asyncio.Task[object]] = [
+        """
+        Run the AI agent and renderer concurrently. 
+        
+        Execution continues until either task completes. Any remaining 
+        tasks are then cancelled and awaited before returning or 
+        propagating an exception.
+        """
+        if self.ui_c is None or self.ai_c is None:
+            raise RuntimeError("App.build() must be called before App.run()")
+
+        tasks = {
             asyncio.create_task(
                 run_agent(self.ai_c, self.ctx),
-                name="snake-agent"
+                name="snake-agent",
             ),
             asyncio.create_task(
-                self.get_render()(
-                    self.ui_c, self.ctx
-                ),
-                name = "render_agent"
-            )
-        ]
-        
+                self.get_render()(self.ui_c, self.ctx),
+                name="renderer",
+            ),
+        }
+
         try:
-            await asyncio.gather(*tasks)
+            done, _ = await asyncio.wait(
+                tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            
+            for task in done:
+                task.result()
+
         finally:
-            await cancel_tasks(tasks)
-            if self.ctx.save_on_exit and await save_active_trainer(self.ai_controller):
-                print("Saved trainer state.", file=sys.stderr)
-        
-        print("\nSnake AI stopped.", file=sys.stderr)
+            await cancel_tasks(list(tasks))
     
     def cleanup(self) -> None:
-        pass
+        if self.ui_c is not None:
+            self.ui_c.cleanup()
+            self.ui_c = None
+        
+        if self.ai_c is not None:
+            self.ai_c.cleanup()
+            self.ai_c = None
+
 
 
 def main() -> int:
-    """
-    Run the application and return an appropriate process exit code.
+    """ 
+    Initialize and run the application. Builds the application, 
+    runs its asynchronous event loop, handles normal interruption and 
+    unexpected failures, and always releases application resources b
+    efore returning the process exit code. 
     """
     ctx = build_ctx(parse_args())
     app = App(ctx)
-    
+
     try:
+        app.build()
         asyncio.run(app.run())
 
     except KeyboardInterrupt:
         return 130
 
     except Exception as error:
-        print("Snake AI failed because of an unexpected error.", file=sys.stderr)
-        if ctx.dev: print(error, file=sys.stderr)
+        print(
+            "Snake AI failed because of an unexpected error.", 
+            file=sys.stderr
+        )
+
+        if ctx.dev:
+            print(error, file=sys.stderr)
+
         return 1
 
     finally:
         app.cleanup()
 
+    print("\nSnake AI stopped.", file=sys.stderr)
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

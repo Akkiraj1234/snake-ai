@@ -13,6 +13,7 @@ from snakeAI.utils import (
     WORLD,
 )
 
+from collections.abc import Callable
 from .enviroment import Environment, Snake
 from .objects import obj_map
 
@@ -313,6 +314,7 @@ class AIController:
     """
     def __init__(self, controller: Controller) -> None: 
         self._controller = controller
+        self._callable: Callable | None = None
     
     def act(self, action: int): 
         return self._controller.act(action)
@@ -329,6 +331,13 @@ class AIController:
     def send_ai_result(self, data: dict[str, object]) -> None:
         """Publish optional Q-learning metrics for the terminal UI."""
         self._controller.save_data(data)
+        
+    def register_cleanup(self, func: Callable):
+        self._callable = func
+    
+    def cleanup(self):
+        if self._callable:
+            self._callable()
 
 
 class UIController:
@@ -337,9 +346,12 @@ class UIController:
     """
     def __init__(self, controller: Controller) -> None: 
         self._controller = controller
+        self._callable: Callable | None = None
         
     def get_frame_data(self):
-        """Return the grid and the compact status data needed by a UI."""
+        """
+        Return the grid and the compact status data needed by a UI.
+        """
         state = self._controller.snake.get_state()
         return self._controller.get_frame(), {
             **self._controller._ai_data,
@@ -353,6 +365,13 @@ class UIController:
     
     async def get_frame_async(self): 
         return await asyncio.to_thread(self._controller.get_frame)
+    
+    def register_cleanup(self, func: Callable):
+        self._callable = func
+    
+    def cleanup(self):
+        if self._callable:
+            self._callable()
 
 
 def build_world(
