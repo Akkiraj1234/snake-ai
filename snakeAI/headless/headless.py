@@ -2,7 +2,7 @@ from snakeAI.world import UIController
 import asyncio
 
 
-async def report_headless(ui: UIController, interval: float) -> None:
+async def render_headless(ui: UIController, interval: float) -> None:
     """Periodically print the same compact state shown by the terminal UI."""
     while True:
         await asyncio.sleep(interval)

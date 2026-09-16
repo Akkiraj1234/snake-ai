@@ -1,45 +1,22 @@
 """Command-line entry point for the Snake AI simulation."""
 from __future__ import annotations
 
-import argparse
 import asyncio
 import inspect
-import random
 import sys
 from dataclasses import dataclass
+from typing import Any, Callable
 
-from .parser import parse_args
-from .utils import AI, RUNTIME, Action
 from .world import AIController, UIController, build_world
-from .headless import report_headless
-from .terminal import render
-from .AI import run_demo_agent
+from .parser import parse_args, build_ctx
+from .utils import ENUM
+
+from .headless import render_headless
+from .terminal import render_tui
+from .application import render_gui
+from .AI import run_agent
 
 
-
-@dataclass(frozen=True, slots=True)
-class RuntimeOptions:
-    """Resolved runtime settings shared by the simulation and terminal UI."""
-
-    step_delay: float
-    fps: float
-    emoji: bool
-    headless: bool
-    update_interval: float
-    save_on_exit: bool
-
-    @classmethod
-    def from_args(cls, args: argparse.Namespace) -> RuntimeOptions:
-        step_delay = RUNTIME.start_delay / args.speed
-        step_delay = min(RUNTIME.max_delay, max(RUNTIME.min_delay, step_delay))
-        return cls(
-            step_delay=step_delay,
-            fps=args.fps,
-            emoji=args.emoji,
-            headless=args.headless,
-            update_interval=args.update_interval,
-            save_on_exit=args.save_on_exit,
-        )
 
 
 async def save_active_trainer(controller: AIController) -> bool:
@@ -63,51 +40,76 @@ async def cancel_tasks(tasks: list[asyncio.Task[object]]) -> None:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def run(args: argparse.Namespace) -> None:
-    """Build the world, launch its tasks, and guarantee orderly shutdown."""
-    options = RuntimeOptions.from_args(args)
-    ui_controller, ai_controller = build_world()
-    tasks: list[asyncio.Task[object]] = [
-        asyncio.create_task(run_demo_agent(ai_controller, options), name="snake-agent"),
-    ]
-
-    if options.headless:
-        if options.update_interval > 0:
-            tasks.append(asyncio.create_task(
-                report_headless(ui_controller, options.update_interval),
-                name="headless-status",
-            ))
-    else:
-        tasks.append(asyncio.create_task(
-            render(ui_controller, fps=options.fps, emoji=options.emoji),
-            name="terminal-renderer",
-        ))
-
-    try:
-        await asyncio.gather(*tasks)
-    finally:
-        await cancel_tasks(tasks)
-        if options.save_on_exit and await save_active_trainer(ai_controller):
-            print("Saved trainer state.", file=sys.stderr)
-
-
-async def main(argv: list[str] | None = None) -> None:
-    """Parse CLI options and run the selected terminal or headless mode."""
-    await run(parse_args(argv))
-
-
-def cli() -> int:
-    """Run the application and convert normal interruption/errors to exit codes."""
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
+class App():
+    def __init__(self, ctx: ENUM) -> None:
+        self.ctx = ctx
+        self.ui_c: UIController | None = None
+        self.ai_cr: AIController | None = None
+    
+    def build(self) -> None:
+        contoller = build_world()
+        self.ui_c = contoller[0]
+        self.ai_c = contoller[1]
+    
+    def get_render(self) ->  Callable:
+        if self.ctx.headless:
+            return render_headless
+        
+        elif self.ctx.tui:
+            return render_tui
+        
+        else: 
+            return render_gui
+        
+    async def run(self) -> None:
+        tasks: list[asyncio.Task[object]] = [
+            asyncio.create_task(
+                run_agent(self.ai_c, self.ctx),
+                name="snake-agent"
+            ),
+            asyncio.create_task(
+                self.get_render()(
+                    self.ui_c, self.ctx
+                ),
+                name = "render_agent"
+            )
+        ]
+        
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            await cancel_tasks(tasks)
+            if self.ctx.save_on_exit and await save_active_trainer(self.ai_controller):
+                print("Saved trainer state.", file=sys.stderr)
+        
         print("\nSnake AI stopped.", file=sys.stderr)
-        return 0
+    
+    def cleanup(self) -> None:
+        pass
+
+
+def main() -> int:
+    """
+    Run the application and return an appropriate process exit code.
+    """
+    ctx = build_ctx(parse_args())
+    app = App(ctx)
+    
+    try:
+        asyncio.run(app.run())
+
+    except KeyboardInterrupt:
+        return 130
+
     except Exception as error:
-        print(f"Snake AI failed: {error}", file=sys.stderr)
+        print("Snake AI failed because of an unexpected error.", file=sys.stderr)
+        if ctx.dev: print(error, file=sys.stderr)
         return 1
+
+    finally:
+        app.cleanup()
+
     return 0
 
-
 if __name__ == "__main__":
-    raise SystemExit(cli())
+    raise SystemExit(main())

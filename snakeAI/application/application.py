@@ -190,3 +190,7 @@ class App:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.on_exit()
+        
+        
+def render_gui(self):
+    raise RuntimeError("gui is not insializied yet")

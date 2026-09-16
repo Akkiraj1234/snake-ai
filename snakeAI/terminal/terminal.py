@@ -144,7 +144,7 @@ def _draw(
     return "\n".join(line[:term.width] for line in lines[:term.height])
 
 
-async def render(
+async def render_tui(
     controller: UIController,
     fps: float = 30.0,
     *,

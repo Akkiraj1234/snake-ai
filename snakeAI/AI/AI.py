@@ -4,7 +4,7 @@ import random
 import asyncio
 
 
-async def run_demo_agent(controller: AIController, options) -> None:
+async def run_agent(controller: AIController, options) -> None:
     """Temporary agent loop until the training agent is connected here.
 
     It honours the configured simulation delay and publishes enough data for

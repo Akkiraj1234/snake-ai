@@ -1,1 +1,1 @@
-from .terminal import render
+from .terminal import render_tui

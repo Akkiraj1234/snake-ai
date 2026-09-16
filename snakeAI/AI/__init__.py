@@ -1,1 +1,1 @@
-from .AI import run_demo_agent
+from .AI import run_agent

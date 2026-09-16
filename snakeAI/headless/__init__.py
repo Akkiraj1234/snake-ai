@@ -1,1 +1,1 @@
-from .headless import report_headless
+from .headless import render_headless
