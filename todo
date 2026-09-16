@@ -1,0 +1,4 @@
+- [ ] clear main.py and error handleing prooper way to lauch pipline
+- [ ] finish simple terminal.py and headless.py
+- [ ] print gui not supported for gui apps launch
+- [ ] remove emoji support from tui and only unicode char support.
